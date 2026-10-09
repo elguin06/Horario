@@ -1,0 +1,92 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0f172a"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg"><title>Mi Horario</title>
+<style>
+:root{--bg:#0f172a;--c:#1e293b;--t:#e2e8f0;--m:#94a3b8;--a:#38bdf8;--g:#34d399;--r:#f87171;--y:#fbbf24}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:15px system-ui,sans-serif;padding-bottom:60px}
+header{position:sticky;top:0;background:var(--bg);padding:10px;z-index:5}
+button,input{font:inherit;color:var(--t)}
+.tabs,.nav{display:flex;gap:6px}.nav{margin-top:8px;align-items:center}.nav b{flex:3;text-align:center}
+.tabs button,.nav button,.btn{flex:1;padding:10px;border:0;border-radius:10px;background:var(--c)}
+.tabs .on,.btn.p{background:var(--a);color:#000}
+main{padding:0 10px}
+.ev{display:flex;gap:10px;background:var(--c);border-left:4px solid var(--a);border-radius:8px;padding:8px;margin:6px 0}
+.ev.study{border-color:var(--g)}.ev.due{border-color:var(--r)}.ev b{min-width:92px}
+h3{margin:14px 0 4px;color:var(--m)}
+.mg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.mg div{background:var(--c);border-radius:8px;padding:8px 0;min-height:48px}
+.mg .h{background:none;min-height:0;color:var(--m)}.mg .td{outline:2px solid var(--a)}
+.d{display:inline-block;width:6px;height:6px;border-radius:50%;margin:1px}
+form{display:grid;gap:8px;margin:8px 0}label{display:grid;gap:3px;color:var(--m);font-size:13px}
+input{background:var(--c);border:1px solid #334155;border-radius:8px;padding:9px;width:100%}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sm{padding:6px 10px;border:0;border-radius:8px;background:#334155}
+.done{opacity:.5;text-decoration:line-through}
+</style></head><body>
+<header><div class="tabs" id="tabs"></div><div class="nav" id="nav"></div></header><main id="m"></main>
+<script>
+const $=s=>document.querySelector(s),pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const mins=s=>{const[h,m]=s.split(':');return h*60+ +m},hhmm=m=>pad(Math.floor(m/60))+':'+pad(m%60);
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const C=[[1,'07:30','10:00','Inglés 3'],[1,'13:30','16:30','Procesos de enseñanza y aprendizaje'],
+[2,'07:30','10:00','Inglés 3'],[2,'10:10','12:40','Redacción académica'],
+[3,'07:30','10:00','Física básica'],[3,'10:10','12:40','Práctica docente'],
+[4,'07:30','10:00','Inglés 3'],[4,'10:10','12:40','Historia dominicana'],[4,'16:30','18:40','Trigonometría 1'],
+[5,'10:10','12:40','Neurociencia'],[6,'09:20','11:00','Neurociencia']];
+const MEALS=[[750,810],[1110,1170]];
+const DN=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],MN=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const ld=k=>{try{return JSON.parse(localStorage[k])}catch(e){return k=='a'?[]:{}}};
+let A=ld('a'),F=ld('f'),view='day',cur=new Date(),P={};
+const save=()=>{localStorage.a=JSON.stringify(A);localStorage.f=JSON.stringify(F)};
+const cls=d=>C.filter(c=>c[0]==d.getDay()).map(c=>({s:mins(c[1]),e:mins(c[2]),t:c[3],k:'class'}));
+const free=(b,lo,hi)=>{let r=[],p=lo;[...b].sort((x,y)=>x.s-y.s).forEach(x=>{if(x.s>p)r.push([p,Math.min(x.s,hi)]);p=Math.max(p,x.e)});if(p<hi)r.push([p,hi]);return r.filter(x=>x[1]>x[0])};
+// Reparte las horas de cada tarea en tus huecos libres (08:00-21:30) antes de la entrega
+function plan(){const out={},busy={},now=new Date();
+const get=d=>{const k=iso(d);return busy[k]||(busy[k]=[...cls(d),...MEALS.map(b=>({s:b[0],e:b[1]}))])};
+A.filter(a=>!a.done).sort((x,y)=>x.due.localeCompare(y.due)).forEach(a=>{
+let need=a.h*60;const due=new Date(a.due),st=new Date(Math.max(new Date(a.at),now));
+const dd=new Date(due.getFullYear(),due.getMonth(),due.getDate());
+for(let d=new Date(st.getFullYear(),st.getMonth(),st.getDate());d<=dd&&need>0;d.setDate(d.getDate()+1)){
+const k=iso(d),b=get(d);let lo=480,hi=1290;
+if(k==iso(st))lo=Math.max(lo,Math.ceil((st.getHours()*60+st.getMinutes())/15)*15);
+if(k==iso(due))hi=Math.min(hi,due.getHours()*60+due.getMinutes()-30);
+const left=Math.round((dd-d)/864e5)+1;let todo=Math.min(need,Math.max(30,Math.ceil(need/left/15)*15));
+for(const[s,e]of free(b,lo,hi)){if(todo<=0)break;const len=Math.min(e-s,todo,90);if(len<30)continue;
+const blk={s,e:s+len,t:'Estudiar: '+a.n,k:'study'};b.push(blk);(out[k]=out[k]||[]).push(blk);todo-=len;need-=len}}});return out}
+const evs=d=>{const k=iso(d);return[...cls(d),...(P[k]||[]),...A.filter(a=>!a.done&&a.due.slice(0,10)==k).map(a=>{const m=mins(a.due.slice(11));return{s:m,e:m,t:'ENTREGA: '+a.n,k:'due'}})].sort((x,y)=>x.s-y.s)};
+const row=e=>`<div class="ev ${e.k}"><b>${hhmm(e.s)}${e.e>e.s?'–'+hhmm(e.e):''}</b><span>${esc(e.t)}</span></div>`;
+const list=d=>evs(d).map(row).join('')||'<p style="color:var(--m)">Día libre</p>';
+const title=d=>DN[d.getDay()]+' '+d.getDate()+' de '+MN[d.getMonth()];
+function render(){P=plan();
+$('#tabs').innerHTML=[['day','Día'],['week','Semana'],['month','Mes'],['task','Tareas']].map(([v,n])=>`<button class="${view==v?'on':''}" onclick="view='${v}';render()">${n}</button>`).join('');
+const m=$('#m');$('#nav').style.display=view=='task'?'none':'flex';
+if(view=='task')return tasks(m);
+const lbl=view=='month'?MN[cur.getMonth()]+' '+cur.getFullYear():view=='week'?'Semana del '+title(mon(cur)):title(cur);
+$('#nav').innerHTML=`<button onclick="go(-1)">‹</button><b>${lbl}</b><button onclick="cur=new Date();render()">Hoy</button><button onclick="go(1)">›</button>`;
+if(view=='day')m.innerHTML=list(cur);
+if(view=='week'){let h='';const s=mon(cur);for(let i=0;i<7;i++){const d=new Date(s);d.setDate(s.getDate()+i);h+=`<h3>${title(d)}</h3>`+list(d)}m.innerHTML=h}
+if(view=='month'){const y=cur.getFullYear(),mo=cur.getMonth(),off=(new Date(y,mo,1).getDay()+6)%7,n=new Date(y,mo+1,0).getDate();
+let h='<div class="mg">'+['L','M','M','J','V','S','D'].map(x=>`<div class="h">${x}</div>`).join('')+'<div style="visibility:hidden"></div>'.repeat(off);
+for(let i=1;i<=n;i++){const d=new Date(y,mo,i),e=evs(d);h+=`<div class="${iso(d)==iso(new Date())?'td':''}" onclick="cur=new Date(${y},${mo},${i});view='day';render()">${i}<br>`+(e.some(x=>x.k=='class')?'<i class="d" style="background:var(--a)"></i>':'')+(e.some(x=>x.k=='study')?'<i class="d" style="background:var(--g)"></i>':'')+(e.some(x=>x.k=='due')?'<i class="d" style="background:var(--r)"></i>':'')+'</div>'}
+m.innerHTML=h+'</div>'}}
+const mon=d=>{const s=new Date(d.getFullYear(),d.getMonth(),d.getDate());s.setDate(s.getDate()-(s.getDay()+6)%7);return s};
+function go(n){if(view=='month')cur=new Date(cur.getFullYear(),cur.getMonth()+n,1);else cur.setDate(cur.getDate()+(view=='week'?7*n:n));render()}
+function tasks(m){const n=new Date(),dt=iso(n),tm=pad(n.getHours())+':'+pad(n.getMinutes());
+m.innerHTML=`<form onsubmit="add(event)"><label>Asignación<input id="n" required placeholder="Ej: Informe de Física"></label>
+<div class="row"><label>Día asignada<input type="date" id="ad" value="${dt}" required></label><label>Hora asignada<input type="time" id="at" value="${tm}" required></label></div>
+<div class="row"><label>Día de entrega<input type="date" id="dd" required></label><label>Hora de entrega<input type="time" id="dt" value="08:00" required></label></div>
+<label>Horas estimadas de trabajo<input type="number" id="h" min="0.5" step="0.5" value="2" required></label>
+<button class="btn p">Agregar y acomodar en mi horario</button></form>
+<div class="row"><button class="btn" onclick="perm()">Activar notificaciones</button><button class="btn" onclick="notify('Prueba','¡Funciona!')">Probar</button></div>
+<h3>Pendientes</h3>`+(A.map((a,i)=>`<div class="ev ${a.done?'done':'due'}"><span style="flex:1">${esc(a.n)}<br><small>Entrega ${a.due.replace('T',' ')} · ${a.h} h</small></span><button class="sm" onclick="A[${i}].done=!A[${i}].done;save();render()">✔</button><button class="sm" onclick="A.splice(${i},1);save();render()">🗑</button></div>`).join('')||'<p style="color:var(--m)">Sin asignaciones</p>')}
+function add(e){e.preventDefault();const at=$('#ad').value+'T'+$('#at').value,due=$('#dd').value+'T'+$('#dt').value;
+if(due<=at)return alert('La entrega debe ser después de la asignación');
+A.push({id:Date.now(),n:$('#n').value.trim(),at,due,h:+$('#h').value});save();view='week';cur=new Date();render()}
+async function perm(){if(!('Notification' in window))return alert('Tu navegador no soporta notificaciones');alert('Permiso: '+await Notification.requestPermission())}
+function notify(t,b){if(!('Notification' in window)||Notification.permission!='granted')return alert('Primero activa las notificaciones');navigator.serviceWorker.ready.then(r=>r.showNotification(t,{body:b,icon:'icon.svg',vibrate:[200,100,200],tag:t+b}))}
+function fire(k,t,b){if(F[k])return;F[k]=1;save();notify(t,b)}
+function check(){if(!('Notification' in window)||Notification.permission!='granted')return;const now=new Date(),nm=now.getHours()*60+now.getMinutes(),k=iso(now);
+evs(now).forEach(e=>{if(e.k=='due')return;const s=e.s-(e.k=='class'?10:0);if(nm>=s&&nm<s+5)fire(k+e.s+e.t,e.k=='class'?'Clase en 10 min':'Hora de estudiar',e.t+' · '+hhmm(e.s))});
+A.filter(a=>!a.done).forEach(a=>{const df=new Date(a.due)-now;if(df>0&&df<=864e5)fire('d1'+a.id,'Entrega en menos de 24 h',a.n);if(df>0&&df<=72e5)fire('d2'+a.id,'¡Entrega en 2 horas!',a.n)})}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+setInterval(()=>{check();if(view!='task')render()},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){check();render()}});
+render();check();
+</script></body></html>
