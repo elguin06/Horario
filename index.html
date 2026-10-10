@@ -35,7 +35,8 @@ const MEALS=[[750,810],[1110,1170]];
 const DN=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],MN=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const ld=k=>{try{return JSON.parse(localStorage[k])}catch(e){return k=='a'?[]:{}}};
 let A=ld('a'),F=ld('f'),view='day',cur=new Date(),P={};
-const save=()=>{localStorage.a=JSON.stringify(A);localStorage.f=JSON.stringify(F)};
+let dirty=true;
+const save=()=>{dirty=true;localStorage.a=JSON.stringify(A);localStorage.f=JSON.stringify(F)};
 const cls=d=>C.filter(c=>c[0]==d.getDay()).map(c=>({s:mins(c[1]),e:mins(c[2]),t:c[3],k:'class'}));
 const free=(b,lo,hi)=>{let r=[],p=lo;[...b].sort((x,y)=>x.s-y.s).forEach(x=>{if(x.s>p)r.push([p,Math.min(x.s,hi)]);p=Math.max(p,x.e)});if(p<hi)r.push([p,hi]);return r.filter(x=>x[1]>x[0])};
 // Reparte las horas de cada tarea en tus huecos libres (08:00-21:30) antes de la entrega
@@ -55,7 +56,7 @@ const evs=d=>{const k=iso(d);return[...cls(d),...(P[k]||[]),...A.filter(a=>!a.do
 const row=e=>`<div class="ev ${e.k}"><b>${hhmm(e.s)}${e.e>e.s?'–'+hhmm(e.e):''}</b><span>${esc(e.t)}</span></div>`;
 const list=d=>evs(d).map(row).join('')||'<p style="color:var(--m)">Día libre</p>';
 const title=d=>DN[d.getDay()]+' '+d.getDate()+' de '+MN[d.getMonth()];
-function render(){P=plan();
+function render(){P=plan();if(dirty){dirty=false;syncNative()}
 $('#tabs').innerHTML=[['day','Día'],['week','Semana'],['month','Mes'],['task','Tareas']].map(([v,n])=>`<button class="${view==v?'on':''}" onclick="view='${v}';render()">${n}</button>`).join('');
 const m=$('#m');$('#nav').style.display=view=='task'?'none':'flex';
 if(view=='task')return tasks(m);
@@ -80,13 +81,27 @@ m.innerHTML=`<form onsubmit="add(event)"><label>Asignación<input id="n" require
 function add(e){e.preventDefault();const at=$('#ad').value+'T'+$('#at').value,due=$('#dd').value+'T'+$('#dt').value;
 if(due<=at)return alert('La entrega debe ser después de la asignación');
 A.push({id:Date.now(),n:$('#n').value.trim(),at,due,h:+$('#h').value});save();view='week';cur=new Date();render()}
-async function perm(){if(!('Notification' in window))return alert('Tu navegador no soporta notificaciones');alert('Permiso: '+await Notification.requestPermission())}
-function notify(t,b){if(!('Notification' in window)||Notification.permission!='granted')return alert('Primero activa las notificaciones');navigator.serviceWorker.ready.then(r=>r.showNotification(t,{body:b,icon:'icon.svg',vibrate:[200,100,200],tag:t+b}))}
+async function perm(){if(LN){const p=await LN.requestPermissions();try{const x=await LN.checkExactNotificationSetting();if(x.exact_alarm!=='granted')await LN.changeExactNotificationSetting()}catch(e){}alert('Permiso: '+p.display);dirty=true;return render()}
+if(!('Notification' in window))return alert('Tu navegador no soporta notificaciones');alert('Permiso: '+await Notification.requestPermission())}
+function notify(t,b){if(LN)return LN.schedule({notifications:[{id:9999,title:t,body:b,schedule:{at:new Date(Date.now()+2000),allowWhileIdle:true}}]});
+if(!('Notification' in window)||Notification.permission!='granted')return alert('Primero activa las notificaciones');navigator.serviceWorker.ready.then(r=>r.showNotification(t,{body:b,icon:'icon.svg',vibrate:[200,100,200],tag:t+b}))}
 function fire(k,t,b){if(F[k])return;F[k]=1;save();notify(t,b)}
-function check(){if(!('Notification' in window)||Notification.permission!='granted')return;const now=new Date(),nm=now.getHours()*60+now.getMinutes(),k=iso(now);
+function check(){if(LN||!('Notification' in window)||Notification.permission!='granted')return;const now=new Date(),nm=now.getHours()*60+now.getMinutes(),k=iso(now);
 evs(now).forEach(e=>{if(e.k=='due')return;const s=e.s-(e.k=='class'?10:0);if(nm>=s&&nm<s+5)fire(k+e.s+e.t,e.k=='class'?'Clase en 10 min':'Hora de estudiar',e.t+' · '+hhmm(e.s))});
 A.filter(a=>!a.done).forEach(a=>{const df=new Date(a.due)-now;if(df>0&&df<=864e5)fire('d1'+a.id,'Entrega en menos de 24 h',a.n);if(df>0&&df<=72e5)fire('d2'+a.id,'¡Entrega en 2 horas!',a.n)})}
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+// App Android (Capacitor): programa avisos locales de los próximos 7 días; funcionan sin internet y con la app cerrada
+const LN=window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()?Capacitor.Plugins.LocalNotifications:null;
+async function syncNative(){if(!LN)return;try{
+const p=await LN.checkPermissions();if(p.display!=='granted')return;
+const pend=await LN.getPending();if(pend.notifications.length)await LN.cancel({notifications:pend.notifications});
+const now=new Date(),L=[],add=(at,t,b)=>{if(at>now)L.push({at,title:t,body:b})};
+for(let i=0;i<7;i++){const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()+i);
+evs(d).forEach(e=>{if(e.k=='due')return;const c=e.k=='class';add(new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,e.s-(c?10:0)),c?'Clase en 10 min':'Hora de estudiar',e.t+' · '+hhmm(e.s))})}
+A.filter(a=>!a.done).forEach(a=>{const due=new Date(a.due);add(new Date(due-864e5),'Entrega en 24 h',a.n);add(new Date(due-72e5),'¡Entrega en 2 horas!',a.n)});
+L.sort((x,y)=>x.at-y.at);
+const N=L.slice(0,200).map((x,i)=>({id:i+1,title:x.title,body:x.body,schedule:{at:x.at,allowWhileIdle:true}}));
+if(N.length)await LN.schedule({notifications:N})}catch(e){console.log(e)}}
+if('serviceWorker' in navigator&&!LN)navigator.serviceWorker.register('sw.js');
 setInterval(()=>{check();if(view!='task')render()},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){check();render()}});
 render();check();
 </script></body></html>
