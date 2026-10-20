@@ -9,7 +9,7 @@ button,input,select{font:inherit;color:var(--t)}
 .tabs .on,.btn.p{background:var(--a);color:#000}
 main{padding:0 10px}
 .ev{display:flex;gap:10px;background:var(--c);border-left:4px solid var(--a);border-radius:8px;padding:8px;margin:6px 0}
-.ev.study{border-color:var(--g)}.ev.due{border-color:var(--r)}.ev.gym{border-color:#fb923c}.ev b{min-width:132px;font-size:14px}
+.ev.study{border-color:var(--g)}.ev.due{border-color:var(--r)}.ev.gym{border-color:#fb923c}.ev.sleep,.ev.bed{border-color:#818cf8}.ev.nap{border-color:#a78bfa}.ev.game{border-color:#f472b6}.ev b{min-width:132px;font-size:14px}
 h3{margin:14px 0 4px;color:var(--m)}
 .mg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
 .mg div{background:var(--c);border-radius:8px;padding:8px 0;min-height:48px}
@@ -40,35 +40,48 @@ let dirty=true;
 const save=()=>{dirty=true;localStorage.a=JSON.stringify(A);localStorage.f=JSON.stringify(F)};
 const cls=d=>C.filter(c=>c[0]==d.getDay()).map(c=>({s:mins(c[1]),e:mins(c[2]),t:c[3],k:'class'}));
 const gym=d=>G.filter(g=>g[0]==d.getDay()).map(g=>({s:mins(g[1]),e:mins(g[2]),t:'Gym: '+g[3],k:'gym'}));
-const lead=e=>e.k=='class'?10:e.k=='gym'?30:0,ttl=e=>e.k=='class'?'Clase en 10 min':e.k=='gym'?'Gym en 30 min':'Hora de estudiar';
+const lead=e=>e.k=='class'?10:e.k=='gym'?30:0,ttl=e=>e.k=='class'?'Clase en 10 min':e.k=='gym'?'Gym en 30 min':e.k=='nap'?'Hora de la siesta':e.k=='bed'?'Hora de dormir':'Hora de estudiar';
 const free=(b,lo,hi)=>{let r=[],p=lo;[...b].sort((x,y)=>x.s-y.s).forEach(x=>{if(x.s>p)r.push([p,Math.min(x.s,hi)]);p=Math.max(p,x.e)});if(p<hi)r.push([p,hi]);return r.filter(x=>x[1]>x[0])};
 const subjects=[...new Set(C.map(c=>c[3]))];
-// Bloques de estudio por materia: 2-3 h el día antes y, si hay hueco, hasta 3 h justo antes de la clase. Las tareas usan el bloque de su materia.
-function plan(){const out={},busy={},now=new Date();
-const get=d=>{const k=iso(d);return busy[k]||(busy[k]=[...cls(d),...gym(d),...MEALS.map(b=>({s:b[0],e:b[1]}))])};
+const sleepEv=()=>[{s:0,e:360,t:'Dormir',k:'sleep'},{s:1410,e:1410,t:'Hora de dormir (a las 12:00 AM)',k:'bed'}];
+// Prioridad: clases, gym, comidas y sueño > siesta > estudio por materia > tareas > juegos (los juegos ceden ante la carga académica)
+let UN={};
+function plan(){const out={},busy={},now=new Date();UN={};
+const get=d=>{const k=iso(d);return busy[k]||(busy[k]=[...cls(d),...gym(d),...MEALS.map(b=>({s:b[0],e:b[1]})),{s:0,e:360},{s:1410,e:1440}])};
 const at=(d,m)=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,m);
-const put=(d,s,e,sub)=>{const b={s,e,sub,t:'Estudiar '+sub,k:'study',st:at(d,s),en:at(d,e)};get(d).push(b);(out[iso(d)]=out[iso(d)]||[]).push(b);return b};
+const put=(d,s,e,sub,k='study',t)=>{const b={s,e,sub,t:t||'Estudiar '+sub,k,st:at(d,s),en:at(d,e)};get(d).push(b);(out[iso(d)]=out[iso(d)]||[]).push(b);return b};
 const base=new Date(now.getFullYear(),now.getMonth(),now.getDate()-7),days=[];
 for(let i=0;i<150;i++)days.push(new Date(base.getFullYear(),base.getMonth(),base.getDate()+i));
+// siesta de 45 min después del almuerzo, si hay hueco
+days.forEach(d=>{const iv=free(get(d),810,960).find(x=>x[1]-x[0]>=45);if(iv)put(d,iv[0],iv[0]+45,'','nap','Siesta')});
+// repaso horas antes de cada clase
 days.forEach(d=>cls(d).forEach(c=>{const iv=free(get(d),480,c.s-15).filter(x=>x[1]-x[0]>=60).pop();
 if(iv){const len=Math.min(180,iv[1]-iv[0]);put(d,iv[1]-len,iv[1],c.t)}}));
+// bloque de 2-3 h el día antes (o dos días antes si no cabe)
 days.forEach(d=>cls(d).forEach(c=>{let need=120;
 for(const off of[1,2]){if(need<=0)break;const pd=new Date(d.getFullYear(),d.getMonth(),d.getDate()-off),iv=free(get(pd),480,1290),big=iv.find(x=>x[1]-x[0]>=need);
 if(big){put(pd,big[0],big[0]+Math.min(need==120?180:need,big[1]-big[0]),c.t);need=0}
 else for(const[s,e]of iv){if(need<=0)break;const len=Math.min(e-s,need);if(len>=30){put(pd,s,s+len,c.t);need-=len}}}}));
+// tareas: primero en el bloque de su materia; lo que sobra se reparte; si la carga es pesada, usa también el horario de juegos (hasta las 11:30 PM)
 A.filter(a=>!a.done).sort((x,y)=>x.due.localeCompare(y.due)).forEach(a=>{
 let need=a.h*60;const due=new Date(a.due),st=new Date(Math.max(new Date(a.at),now));
-if(a.m)Object.values(out).flat().filter(b=>b.sub==a.m&&!b.task&&b.st>=st&&b.en<=due).sort((x,y)=>x.st-y.st).forEach(b=>{if(need<=0)return;b.task=a.n;b.t='Estudiar '+b.sub+' → Tarea: '+a.n;need-=b.e-b.s});
+if(a.m)Object.values(out).flat().filter(b=>b.sub==a.m&&!b.task&&b.k=='study'&&b.st>=st&&b.en<=due).sort((x,y)=>x.st-y.st).forEach(b=>{if(need<=0)return;b.task=a.n;b.t='Estudiar '+b.sub+' → Tarea: '+a.n;need-=b.e-b.s});
 const dd=new Date(due.getFullYear(),due.getMonth(),due.getDate());
+for(const top of[1290,1410]){
 for(let d=new Date(st.getFullYear(),st.getMonth(),st.getDate());d<=dd&&need>0;d.setDate(d.getDate()+1)){
-const k=iso(d),b=get(d);let lo=480,hi=1290;
+const k=iso(d),b=get(d);let lo=480,hi=top;
 if(k==iso(st))lo=Math.max(lo,Math.ceil((st.getHours()*60+st.getMinutes())/15)*15);
 if(k==iso(due))hi=Math.min(hi,due.getHours()*60+due.getMinutes()-30);
-const left=Math.round((dd-d)/864e5)+1;let todo=Math.min(need,Math.max(60,Math.ceil(need/left/15)*15));
+const left=Math.round((dd-d)/864e5)+1;let todo=top==1290?Math.min(need,Math.max(60,Math.ceil(need/left/15)*15)):need;
 for(const[s,e]of free(b,lo,hi)){if(todo<=0)break;const len=Math.min(e-s,todo,90);if(len<45)continue;
-const blk={s,e:s+len,t:'Tarea: '+a.n,k:'study'};b.push(blk);(out[k]=out[k]||[]).push(blk);todo-=len;need-=len}}});
+const blk={s,e:s+len,t:'Tarea: '+a.n,k:'study'};b.push(blk);(out[k]=out[k]||[]).push(blk);todo-=len;need-=len}}}UN[a.id]=Math.max(0,need)});
+// juegos: 2 h entre semana y 3 h sábado y domingo, en lo que quede libre (de noche primero)
+const hoy=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+days.forEach(d=>{const want=d.getDay()%6==0?180:120;let got=0;const pl=[];
+for(const[s,e]of free(get(d),480,1410).filter(x=>x[1]-x[0]>=45).sort((x,y)=>y[1]-x[1])){if(got>=want)break;const len=Math.min(e-s,want-got,180);pl.push(put(d,e-len,e,'','game','Juegos'));got+=len}
+if(got<60){pl.forEach(b=>b.t='Juegos (reducido por carga académica)');if(!got&&d>=hoy)(out[iso(d)]=out[iso(d)]||[]).push({s:1380,e:1380,t:'Sin tiempo de juego hoy: carga académica',k:'game'})}});
 return out}
-const evs=d=>{const k=iso(d);return[...cls(d),...gym(d),...(P[k]||[]),...A.filter(a=>!a.done&&a.due.slice(0,10)==k).map(a=>{const m=mins(a.due.slice(11));return{s:m,e:m,t:'ENTREGA: '+a.n,k:'due'}})].sort((x,y)=>x.s-y.s)};
+const evs=d=>{const k=iso(d);return[...sleepEv(),...cls(d),...gym(d),...(P[k]||[]),...A.filter(a=>!a.done&&a.due.slice(0,10)==k).map(a=>{const m=mins(a.due.slice(11));return{s:m,e:m,t:'ENTREGA: '+a.n,k:'due'}})].sort((x,y)=>x.s-y.s)};
 const row=e=>`<div class="ev ${e.k}"><b>${hhmm(e.s)}${e.e>e.s?'–'+hhmm(e.e):''}</b><span>${esc(e.t)}</span></div>`;
 const list=d=>evs(d).map(row).join('')||'<p style="color:var(--m)">Día libre</p>';
 const title=d=>DN[d.getDay()]+' '+d.getDate()+' de '+MN[d.getMonth()];
@@ -94,7 +107,7 @@ m.innerHTML=`<form onsubmit="add(event)"><label>Asignación<input id="n" require
 <label>Horas estimadas de trabajo<input type="number" id="h" min="0.5" step="0.5" value="2" required></label>
 <button class="btn p">Agregar y acomodar en mi horario</button></form>
 <div class="row"><button class="btn" onclick="perm()">Activar notificaciones</button><button class="btn" onclick="notify('Prueba','¡Funciona!')">Probar</button></div>
-<h3>Pendientes</h3>`+(A.map((a,i)=>`<div class="ev ${a.done?'done':'due'}"><span style="flex:1">${esc(a.n)}${a.m?' · '+esc(a.m):''}<br><small>Entrega ${a.due.slice(0,10)} ${hhmm(mins(a.due.slice(11)))} · ${a.h} h</small></span><button class="sm" onclick="A[${i}].done=!A[${i}].done;save();render()">✔</button><button class="sm" onclick="A.splice(${i},1);save();render()">🗑</button></div>`).join('')||'<p style="color:var(--m)">Sin asignaciones</p>')}
+<h3>Pendientes</h3>`+(A.map((a,i)=>`<div class="ev ${a.done?'done':'due'}"><span style="flex:1">${esc(a.n)}${a.m?' · '+esc(a.m):''}<br><small>Entrega ${a.due.slice(0,10)} ${hhmm(mins(a.due.slice(11)))} · ${a.h} h${UN[a.id]>0?' · ⚠ faltan '+(UN[a.id]/60).toFixed(1)+' h sin hueco':''}</small></span><button class="sm" onclick="A[${i}].done=!A[${i}].done;save();render()">✔</button><button class="sm" onclick="A.splice(${i},1);save();render()">🗑</button></div>`).join('')||'<p style="color:var(--m)">Sin asignaciones</p>')}
 function add(e){e.preventDefault();const at=$('#ad').value+'T'+$('#at').value,due=$('#dd').value+'T'+$('#dt').value;
 if(due<=at)return alert('La entrega debe ser después de la asignación');
 A.push({id:Date.now(),n:$('#n').value.trim(),m:$('#m').value,at,due,h:+$('#h').value});save();view='week';cur=new Date();render()}
@@ -104,7 +117,7 @@ function notify(t,b){if(LN)return LN.schedule({notifications:[{id:9999,title:t,b
 if(!('Notification' in window)||Notification.permission!='granted')return alert('Primero activa las notificaciones');navigator.serviceWorker.ready.then(r=>r.showNotification(t,{body:b,icon:'icon.svg',vibrate:[200,100,200],tag:t+b}))}
 function fire(k,t,b){if(F[k])return;F[k]=1;save();notify(t,b)}
 function check(){if(LN||!('Notification' in window)||Notification.permission!='granted')return;const now=new Date(),nm=now.getHours()*60+now.getMinutes(),k=iso(now);
-evs(now).forEach(e=>{if(e.k=='due')return;const s=e.s-lead(e);if(nm>=s&&nm<s+5)fire(k+e.s+e.t,ttl(e),e.t+' · '+hhmm(e.s))});
+evs(now).forEach(e=>{if(e.k=='due'||e.k=='game'||e.k=='sleep')return;const s=e.s-lead(e);if(nm>=s&&nm<s+5)fire(k+e.s+e.t,ttl(e),e.t+' · '+hhmm(e.s))});
 A.filter(a=>!a.done).forEach(a=>{const df=new Date(a.due)-now;if(df>0&&df<=864e5)fire('d1'+a.id,'Entrega en menos de 24 h',a.n);if(df>0&&df<=72e5)fire('d2'+a.id,'¡Entrega en 2 horas!',a.n)})}
 // App Android (Capacitor): programa avisos locales de los próximos 7 días; funcionan sin internet y con la app cerrada
 const LN=window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()?Capacitor.Plugins.LocalNotifications:null;
@@ -113,7 +126,7 @@ const p=await LN.checkPermissions();if(p.display!=='granted')return;
 const pend=await LN.getPending();if(pend.notifications.length)await LN.cancel({notifications:pend.notifications});
 const now=new Date(),L=[],add=(at,t,b)=>{if(at>now)L.push({at,title:t,body:b})};
 for(let i=0;i<7;i++){const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()+i);
-evs(d).forEach(e=>{if(e.k=='due')return;add(new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,e.s-lead(e)),ttl(e),e.t+' · '+hhmm(e.s))})}
+evs(d).forEach(e=>{if(e.k=='due'||e.k=='game'||e.k=='sleep')return;add(new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,e.s-lead(e)),ttl(e),e.t+' · '+hhmm(e.s))})}
 A.filter(a=>!a.done).forEach(a=>{const due=new Date(a.due);add(new Date(due-864e5),'Entrega en 24 h',a.n);add(new Date(due-72e5),'¡Entrega en 2 horas!',a.n)});
 L.sort((x,y)=>x.at-y.at);
 const N=L.slice(0,200).map((x,i)=>({id:i+1,title:x.title,body:x.body,schedule:{at:x.at,allowWhileIdle:true}}));
