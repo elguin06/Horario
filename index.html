@@ -27,7 +27,7 @@ const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const mins=s=>{const[h,m]=s.split(':');return h*60+ +m},hhmm=m=>{const h=Math.floor(m/60);return (h%12||12)+':'+pad(m%60)+' '+(h<12?'AM':'PM')};
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const C=[[1,'07:30','10:00','Inglés 3'],[1,'13:30','16:30','Procesos de enseñanza y aprendizaje'],
-[2,'07:30','10:00','Inglés 3'],[2,'10:10','12:40','Redacción académica'],
+[2,'07:30','10:00','Inglés 3'],[2,'10:10','12:40','Redacción académica'],[2,'13:40','16:30','Práctica docente teórica'],
 [3,'07:30','10:00','Física básica'],[3,'10:10','12:40','Práctica docente'],
 [4,'07:30','10:00','Inglés 3'],[4,'10:10','12:40','Historia dominicana'],[4,'16:30','18:40','Trigonometría 1'],
 [5,'10:10','12:40','Neurociencia'],[6,'09:20','11:00','Neurociencia']];
@@ -59,7 +59,7 @@ days.forEach(d=>cls(d).forEach(c=>{const iv=free(get(d),480,c.s-15).filter(x=>x[
 if(iv){const len=Math.min(180,iv[1]-iv[0]);put(d,iv[1]-len,iv[1],c.t)}}));
 // bloque de 2-3 h el día antes (o dos días antes si no cabe)
 days.forEach(d=>cls(d).forEach(c=>{let need=120;
-for(const off of[1,2]){if(need<=0)break;const pd=new Date(d.getFullYear(),d.getMonth(),d.getDate()-off),iv=free(get(pd),480,1290),big=iv.find(x=>x[1]-x[0]>=need);
+for(const off of[1,2,3]){if(need<=0)break;const pd=new Date(d.getFullYear(),d.getMonth(),d.getDate()-off),iv=free(get(pd),480,1290),big=iv.find(x=>x[1]-x[0]>=need);
 if(big){put(pd,big[0],big[0]+Math.min(need==120?180:need,big[1]-big[0]),c.t);need=0}
 else for(const[s,e]of iv){if(need<=0)break;const len=Math.min(e-s,need);if(len>=30){put(pd,s,s+len,c.t);need-=len}}}}));
 // tareas: primero en el bloque de su materia; lo que sobra se reparte; si la carga es pesada, usa también el horario de juegos (hasta las 11:30 PM)
